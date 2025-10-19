@@ -41,17 +41,17 @@ func main() {
 	// Test NodeGroupTargetSize call
 	log.Println("Testing NodeGroupTargetSize call...")
 	sizeResp, err := client.NodeGroupTargetSize(ctx, &protos.NodeGroupTargetSizeRequest{
-		Id: "test-group",
+		Id: resp.NodeGroups[0].Id,
 	})
 	if err != nil {
 		log.Fatalf("NodeGroupTargetSize failed: %v", err)
 	}
-	log.Printf("Target size for test-group: %d", sizeResp.TargetSize)
+	log.Printf("Target size for %s: %d", resp.NodeGroups[0].Id, sizeResp.TargetSize)
 
 	// Test NodeGroupIncreaseSize call
 	log.Println("Testing NodeGroupIncreaseSize call...")
 	_, err = client.NodeGroupIncreaseSize(ctx, &protos.NodeGroupIncreaseSizeRequest{
-		Id:    "test-group",
+		Id:    resp.NodeGroups[0].Id,
 		Delta: 2,
 	})
 	if err != nil {
