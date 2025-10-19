@@ -2,6 +2,7 @@ package dockerCloudProviderServer
 
 import (
 	"context"
+	"log"
 	"mbj-autoscaler/cluster-autoscaler/cloudprovider/externalgrpc/protos"
 
 	"google.golang.org/grpc/codes"
@@ -19,10 +20,27 @@ type CloudProviderServer struct {
 	protos.UnimplementedCloudProviderServer
 }
 
-func (CloudProviderServer) NodeGroups(context.Context, *protos.NodeGroupsRequest) (*protos.NodeGroupsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroups not implementeda")
+var nodeGroups = []*protos.NodeGroup{
+	{
+		Id:      "docker-virtual-node-group",
+		MinSize: 1,
+		MaxSize: 3,
+		Debug:   "This node group is managed by my custom docker cloud provider and allows for assigning containers running on an old work laptop as nodes. If it wasn't obvious before, this is for learning purposes.",
+	},
 }
-func (CloudProviderServer) NodeGroupForNode(context.Context, *protos.NodeGroupForNodeRequest) (*protos.NodeGroupForNodeResponse, error) {
+
+// nodeGroupTargetSizes tracks the current target size for each node group
+var nodeGroupTargetSizes = map[string]int32{
+	"docker-virtual-node-group": 1, // Start with 1 node as default
+}
+
+func (CloudProviderServer) NodeGroups(context.Context, *protos.NodeGroupsRequest) (*protos.NodeGroupsResponse, error) {
+	response := &protos.NodeGroupsResponse{
+		NodeGroups: nodeGroups,
+	}
+	return response, nil
+}
+func (CloudProviderServer) NodeGroupForNode(c context.Context, r *protos.NodeGroupForNodeRequest) (*protos.NodeGroupForNodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupForNode not implemented")
 }
 func (CloudProviderServer) PricingNodePrice(context.Context, *protos.PricingNodePriceRequest) (*protos.PricingNodePriceResponse, error) {
@@ -43,19 +61,38 @@ func (CloudProviderServer) Cleanup(context.Context, *protos.CleanupRequest) (*pr
 func (CloudProviderServer) Refresh(context.Context, *protos.RefreshRequest) (*protos.RefreshResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Refresh not implemented")
 }
-func (CloudProviderServer) NodeGroupTargetSize(context.Context, *protos.NodeGroupTargetSizeRequest) (*protos.NodeGroupTargetSizeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupTargetSize not implemented")
+func (CloudProviderServer) NodeGroupTargetSize(c context.Context, r *protos.NodeGroupTargetSizeRequest) (*protos.NodeGroupTargetSizeResponse, error) {
+	nodeGroup := findNodeGroupByID(r.Id)
+	if nodeGroup == nil {
+		return nil, status.Errorf(codes.NotFound, "node group not found")
+	}
+
+	targetSize, exists := findTargetSizeByID(r.Id)
+	if !exists {
+		// Default to minimum size if not explicitly set
+		targetSize = nodeGroup.MinSize
+		nodeGroupTargetSizes[r.Id] = targetSize
+	}
+
+	return &protos.NodeGroupTargetSizeResponse{
+		TargetSize: targetSize,
+	}, nil
 }
-func (CloudProviderServer) NodeGroupIncreaseSize(context.Context, *protos.NodeGroupIncreaseSizeRequest) (*protos.NodeGroupIncreaseSizeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupIncreaseSize not implemented")
+func (CloudProviderServer) NodeGroupIncreaseSize(c context.Context, r *protos.NodeGroupIncreaseSizeRequest) (*protos.NodeGroupIncreaseSizeResponse, error) {
+	log.Printf("Increasing size for node group '%s' by %d", r.Id, r.Delta)
+
+	// TODO: Call Docker API to actually increase the number of containers/nodes
+	return &protos.NodeGroupIncreaseSizeResponse{}, nil
 }
 func (CloudProviderServer) NodeGroupDeleteNodes(context.Context, *protos.NodeGroupDeleteNodesRequest) (*protos.NodeGroupDeleteNodesResponse, error) {
+	// TODO: Call Docker API to actually delete the specified nodes
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupDeleteNodes not implemented")
 }
 func (CloudProviderServer) NodeGroupDecreaseTargetSize(context.Context, *protos.NodeGroupDecreaseTargetSizeRequest) (*protos.NodeGroupDecreaseTargetSizeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupDecreaseTargetSize not implemented")
 }
 func (CloudProviderServer) NodeGroupNodes(context.Context, *protos.NodeGroupNodesRequest) (*protos.NodeGroupNodesResponse, error) {
+	// TODO: Call Docker API to actually list the nodes in the specified group
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupNodes not implemented")
 }
 func (CloudProviderServer) NodeGroupTemplateNodeInfo(context.Context, *protos.NodeGroupTemplateNodeInfoRequest) (*protos.NodeGroupTemplateNodeInfoResponse, error) {
@@ -63,4 +100,18 @@ func (CloudProviderServer) NodeGroupTemplateNodeInfo(context.Context, *protos.No
 }
 func (CloudProviderServer) NodeGroupGetOptions(context.Context, *protos.NodeGroupAutoscalingOptionsRequest) (*protos.NodeGroupAutoscalingOptionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupGetOptions not implemented")
+}
+
+func findTargetSizeByID(id string) (int32, bool) {
+	size, exists := nodeGroupTargetSizes[id]
+	return size, exists
+}
+
+func findNodeGroupByID(id string) *protos.NodeGroup {
+	for _, ng := range nodeGroups {
+		if ng.Id == id {
+			return ng
+		}
+	}
+	return nil
 }

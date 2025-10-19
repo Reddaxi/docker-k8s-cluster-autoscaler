@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+	// TODO: Verify that Docker is running and accessible
 
 	// Step 1: Create a gRPC client using mbjgrpcserver
 	grpcServer := grpc.NewServer()
