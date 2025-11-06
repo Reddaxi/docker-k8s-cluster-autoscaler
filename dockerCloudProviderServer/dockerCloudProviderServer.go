@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"mbj-autoscaler/cluster-autoscaler/cloudprovider/externalgrpc/protos"
+	dockerclient "mbj-autoscaler/dockerCloudProviderServer/dockerClient"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -12,12 +13,29 @@ import (
 func NewServer() CloudProviderServer {
 	// Implementation goes here
 	server := &CloudProviderServer{}
+	dockerClient, err := dockerclient.NewDockerClient()
+	if err != nil {
+		log.Fatalf("Failed to create Docker client: %v", err)
+	}
+	server.dockerClient = dockerClient
+
+	currentContainerIds := server.dockerClient.ListContainers()
+
+	for _, id := range currentContainerIds {
+		instance := findNodeByContainerID(*server, id)
+		if instance != nil {
+			server.instances = append(server.instances, instance)
+		}
+	}
+
 	return *server
 }
 
 // CloudProviderServer implements the gRPC CloudProvider service
 type CloudProviderServer struct {
 	protos.UnimplementedCloudProviderServer
+	dockerClient *dockerclient.DockerClient
+	instances    []*protos.Instance
 }
 
 var nodeGroups = []*protos.NodeGroup{
@@ -91,9 +109,24 @@ func (CloudProviderServer) NodeGroupDeleteNodes(context.Context, *protos.NodeGro
 func (CloudProviderServer) NodeGroupDecreaseTargetSize(context.Context, *protos.NodeGroupDecreaseTargetSizeRequest) (*protos.NodeGroupDecreaseTargetSizeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupDecreaseTargetSize not implemented")
 }
-func (CloudProviderServer) NodeGroupNodes(context.Context, *protos.NodeGroupNodesRequest) (*protos.NodeGroupNodesResponse, error) {
-	// TODO: Call Docker API to actually list the nodes in the specified group
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupNodes not implemented")
+func (c CloudProviderServer) NodeGroupNodes(context context.Context, r *protos.NodeGroupNodesRequest) (*protos.NodeGroupNodesResponse, error) {
+	// ## Testing ##
+	// if r.Id != nodeGroups[0].Id {
+	// 	return nil, status.Errorf(codes.NotFound, "node group not found")
+	// }
+	localContainerIDs := c.dockerClient.ListContainers()
+	nodesInNodeGroup := []*protos.Instance{}
+	for _, containerID := range localContainerIDs {
+		instance := findNodeByContainerID(c, containerID)
+		if instance != nil {
+			nodesInNodeGroup = append(nodesInNodeGroup, instance)
+		}
+	}
+
+	// ## Testing ##
+	// return &protos.NodeGroupNodesResponse{
+	// 	Instances: c.instances,
+	// }, nil
 }
 func (CloudProviderServer) NodeGroupTemplateNodeInfo(context.Context, *protos.NodeGroupTemplateNodeInfoRequest) (*protos.NodeGroupTemplateNodeInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupTemplateNodeInfo not implemented")
@@ -114,4 +147,12 @@ func findNodeGroupByID(id string) *protos.NodeGroup {
 		}
 	}
 	return nil
+}
+
+func findNodeByContainerID(c CloudProviderServer, containerID string) *protos.Instance {
+	for _, i := range c.instances {
+		if i.Id == containerID {
+			return i
+		}
+	}
 }
