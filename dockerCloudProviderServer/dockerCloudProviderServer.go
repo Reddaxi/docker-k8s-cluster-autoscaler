@@ -2,6 +2,7 @@ package dockerCloudProviderServer
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"mbj-autoscaler/cluster-autoscaler/cloudprovider/externalgrpc/protos"
 	dockerclient "mbj-autoscaler/dockerCloudProviderServer/dockerClient"
@@ -12,20 +13,16 @@ import (
 
 func NewServer() CloudProviderServer {
 	// Implementation goes here
+	log.Printf("Creating new CloudProverServer...")
 	server := &CloudProviderServer{}
 	dockerClient, err := dockerclient.NewDockerClient()
 	if err != nil {
 		log.Fatalf("Failed to create Docker client: %v", err)
 	}
 	server.dockerClient = dockerClient
-
 	currentContainerIds := server.dockerClient.ListContainers()
-
 	for _, id := range currentContainerIds {
-		instance := findNodeByContainerID(*server, id)
-		if instance != nil {
-			server.instances = append(server.instances, instance)
-		}
+		addDockerContainerAsNode(server, id, nodeGroups[0].Id)
 	}
 
 	return *server
@@ -79,6 +76,7 @@ func (CloudProviderServer) Cleanup(context.Context, *protos.CleanupRequest) (*pr
 func (CloudProviderServer) Refresh(context.Context, *protos.RefreshRequest) (*protos.RefreshResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Refresh not implemented")
 }
+
 func (CloudProviderServer) NodeGroupTargetSize(c context.Context, r *protos.NodeGroupTargetSizeRequest) (*protos.NodeGroupTargetSizeResponse, error) {
 	nodeGroup := findNodeGroupByID(r.Id)
 	if nodeGroup == nil {
@@ -96,19 +94,44 @@ func (CloudProviderServer) NodeGroupTargetSize(c context.Context, r *protos.Node
 		TargetSize: targetSize,
 	}, nil
 }
-func (CloudProviderServer) NodeGroupIncreaseSize(c context.Context, r *protos.NodeGroupIncreaseSizeRequest) (*protos.NodeGroupIncreaseSizeResponse, error) {
+
+func (c *CloudProviderServer) NodeGroupIncreaseSize(context context.Context, r *protos.NodeGroupIncreaseSizeRequest) (*protos.NodeGroupIncreaseSizeResponse, error) {
 	log.Printf("Increasing size for node group '%s' by %d", r.Id, r.Delta)
 
-	// TODO: Call Docker API to actually increase the number of containers/nodes
+	for i := 0; i < int(r.Delta); i++ {
+		containerDockerID, err := c.dockerClient.CreateContainer(fmt.Sprintf("%s-%d", r.Id, i))
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Created container '%s' for node group '%s'", containerDockerID, r.Id)
+		addDockerContainerAsNode(c, containerDockerID, r.Id)
+	}
+
+	log.Printf("Finished creating nodes. There are now '%d' nodes running on this machine", len(c.instances))
 	return &protos.NodeGroupIncreaseSizeResponse{}, nil
 }
-func (CloudProviderServer) NodeGroupDeleteNodes(context.Context, *protos.NodeGroupDeleteNodesRequest) (*protos.NodeGroupDeleteNodesResponse, error) {
-	// TODO: Call Docker API to actually delete the specified nodes
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupDeleteNodes not implemented")
+
+func (c *CloudProviderServer) NodeGroupDeleteNodes(context context.Context, r *protos.NodeGroupDeleteNodesRequest) (*protos.NodeGroupDeleteNodesResponse, error) {
+	log.Printf("Deleting nodes '%d' from node group '%s'", len(r.Nodes), r.Id)
+
+	for _, node := range r.Nodes {
+		log.Printf("Deleting node with name '%s'", node.Name)
+		err := c.dockerClient.DeleteContainer(node.Name)
+		if err != nil {
+			log.Printf("Failed to delete container '%s': %v", node.Name, err)
+		}
+		log.Printf("Deleted container '%s' for node group '%s'", node.Name, r.Id)
+		removeNode(c, findNodeByContainerID(*c, node.Name))
+	}
+
+	log.Printf("Finished deleting nodes. There are now '%d' nodes running on this machine", len(c.instances))
+	return &protos.NodeGroupDeleteNodesResponse{}, nil
 }
+
 func (CloudProviderServer) NodeGroupDecreaseTargetSize(context.Context, *protos.NodeGroupDecreaseTargetSizeRequest) (*protos.NodeGroupDecreaseTargetSizeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupDecreaseTargetSize not implemented")
 }
+
 func (c CloudProviderServer) NodeGroupNodes(context context.Context, r *protos.NodeGroupNodesRequest) (*protos.NodeGroupNodesResponse, error) {
 	// ## Testing ##
 	// if r.Id != nodeGroups[0].Id {
@@ -127,12 +150,40 @@ func (c CloudProviderServer) NodeGroupNodes(context context.Context, r *protos.N
 	// return &protos.NodeGroupNodesResponse{
 	// 	Instances: c.instances,
 	// }, nil
+	return &protos.NodeGroupNodesResponse{
+		Instances: nodesInNodeGroup,
+	}, nil
 }
 func (CloudProviderServer) NodeGroupTemplateNodeInfo(context.Context, *protos.NodeGroupTemplateNodeInfoRequest) (*protos.NodeGroupTemplateNodeInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupTemplateNodeInfo not implemented")
 }
 func (CloudProviderServer) NodeGroupGetOptions(context.Context, *protos.NodeGroupAutoscalingOptionsRequest) (*protos.NodeGroupAutoscalingOptionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupGetOptions not implemented")
+}
+
+func addDockerContainerAsNode(c *CloudProviderServer, containerDockerID string, nodeGroupID string) {
+	c.instances = append(c.instances, &protos.Instance{
+		Id:     containerDockerID,
+		Status: &protos.InstanceStatus{InstanceState: protos.InstanceStatus_instanceRunning},
+	})
+	log.Printf("Added container '%s' as node to node group '%s'. There are now a total of '%d' nodes.", containerDockerID, nodeGroupID, len(c.instances))
+}
+
+func removeNode(c *CloudProviderServer, removedNode *protos.Instance) {
+	// Simply remove the last node for now
+	if len(c.instances) == 0 {
+		log.Printf("No nodes to remove.")
+		return
+	}
+	// Remove the node with the specificied id
+	for i, instance := range c.instances {
+		if instance.Id == removedNode.Id {
+			// Remove the instance from the slice
+			c.instances = append(c.instances[:i], c.instances[i+1:]...)
+			break
+		}
+	}
+	log.Printf("Removed node with ID '%s'. There are now a total of '%d' nodes.", removedNode.Id, len(c.instances))
 }
 
 func findTargetSizeByID(id string) (int32, bool) {
@@ -155,4 +206,5 @@ func findNodeByContainerID(c CloudProviderServer, containerID string) *protos.In
 			return i
 		}
 	}
+	return nil
 }

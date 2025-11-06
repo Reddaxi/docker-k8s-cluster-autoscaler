@@ -20,7 +20,7 @@ func main() {
 
 	// Step 2: Create a Docker gRPC server and register it with the gRPC client
 	dockerCloudProviderServer := dockerCloudProviderServer.NewServer()
-	protos.RegisterCloudProviderServer(grpcServer, dockerCloudProviderServer)
+	protos.RegisterCloudProviderServer(grpcServer, &dockerCloudProviderServer)
 
 	// Step 3: Start listening
 	lis, err := net.Listen("tcp", "127.0.0.1:50051")
