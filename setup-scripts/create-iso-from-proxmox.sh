@@ -17,9 +17,9 @@ sudo umount /mnt
 echo "##### Building mbj-autoscaler go application #####"
 echo "Building..."
 # Build mbj-autoscaler and move it into ISO
-go build -C ~/Documents/repos/mbj-autoscaler -o ~/Documents/repos/mbj-autoscaler/mbj-autoscaler .
+go build -C ~/repos/docker-k8s-cluster-autoscaler -o ~/repos/docker-k8s-cluster-autoscaler/mbj-autoscaler .
 sudo mkdir -p ~/proxmox-iso/rootfs/usr/local/bin/
-sudo cp ~/Documents/repos/mbj-autoscaler/mbj-autoscaler ~/proxmox-iso/rootfs/usr/local/bin/
+sudo cp ~/repos/docker-k8s-cluster-autoscaler/mbj-autoscaler ~/proxmox-iso/rootfs/usr/local/bin/
 sudo chmod +x ~/proxmox-iso/rootfs/usr/local/bin/mbj-autoscaler
 
 # Create service unit in ISO
@@ -104,6 +104,7 @@ xorriso -as mkisofs -o ~/custom-proxmox.iso \
 
 if [ $? -eq 0 ]; then
     echo "✅ Custom ISO created successfully at: ~/custom-proxmox.iso"
+    echo "Try running sudo dd if=./custom-proxmox.iso of=/dev/sdc bs=1M conv=fdatasync"
     ls -lh ~/custom-proxmox.iso
 else
     echo "❌ Failed to create ISO"
