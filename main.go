@@ -2,7 +2,7 @@ package main
 
 import (
 	"mbj-autoscaler/cluster-autoscaler/cloudprovider/externalgrpc/protos"
-	"mbj-autoscaler/dockerCloudProviderServer"
+	"mbj-autoscaler/proxmoxCloudProviderServer"
 	"net"
 	"os"
 	"os/signal"
@@ -19,8 +19,10 @@ func main() {
 	grpcServer := grpc.NewServer()
 
 	// Step 2: Create a Docker gRPC server and register it with the gRPC client
-	dockerCloudProviderServer := dockerCloudProviderServer.NewServer()
-	protos.RegisterCloudProviderServer(grpcServer, &dockerCloudProviderServer)
+	// dockerCloudProviderServer := dockerCloudProviderServer.NewServer()
+	proxmoxProviderServer := proxmoxCloudProviderServer.NewServer()
+	// protos.RegisterCloudProviderServer(grpcServer, &dockerCloudProviderServer)
+	protos.RegisterCloudProviderServer(grpcServer, &proxmoxProviderServer)
 
 	// Step 3: Start listening
 	lis, err := net.Listen("tcp", "127.0.0.1:50051")
@@ -38,7 +40,7 @@ func main() {
 	}()
 
 	// Step 5: Start serving
-	klog.Infof("Docker Cloud Provider gRPC server listening on %s", "127.0.0.1:50051")
+	klog.Infof("Proxmox Cloud Provider gRPC server listening on %s", "127.0.0.1:50051")
 	if err := grpcServer.Serve(lis); err != nil {
 		klog.Fatalf("Failed to serve: %v", err)
 	}
