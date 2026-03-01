@@ -25,9 +25,9 @@ func main() {
 	protos.RegisterCloudProviderServer(grpcServer, &proxmoxProviderServer)
 
 	// Step 3: Start listening
-	lis, err := net.Listen("tcp", "127.0.0.1:50051")
+	lis, err := net.Listen("tcp", "0.0.0.0:50051")
 	if err != nil {
-		klog.Fatalf("Failed to listen on %s: %v", "127.0.0.1:50051", err)
+		klog.Fatalf("Failed to listen on %s: %v", "0.0.0.0:50051", err)
 	}
 
 	// Step 4: Handle graceful shutdown
@@ -40,7 +40,7 @@ func main() {
 	}()
 
 	// Step 5: Start serving
-	klog.Infof("Proxmox Cloud Provider gRPC server listening on %s", "127.0.0.1:50051")
+	klog.Infof("Proxmox Cloud Provider gRPC server listening on %s", "0.0.0.0:50051")
 	if err := grpcServer.Serve(lis); err != nil {
 		klog.Fatalf("Failed to serve: %v", err)
 	}

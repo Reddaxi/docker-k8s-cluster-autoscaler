@@ -8,11 +8,13 @@ import (
 	"log"
 	"mbj-autoscaler/cluster-autoscaler/cloudprovider/externalgrpc/protos"
 	proxmoxclient "mbj-autoscaler/proxmoxCloudProviderServer/proxmoxClient"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
 
 func NewServer() CloudProviderServer {
 	// Implementation goes here
@@ -23,7 +25,7 @@ func NewServer() CloudProviderServer {
 		log.Fatalf("Failed to create Proxmox client: %v", err)
 	}
 	server.proxmoxClient = proxmoxClient
-	currentContainerIds := server.proxmoxClient.ListContainers()
+	currentContainerIds := server.proxmoxClient.ListVMIDs()
 	for _, id := range currentContainerIds {
 		addProxmoxContainerAsNode(server, id, nodeGroups[0].Id)
 	}
@@ -35,7 +37,7 @@ func NewServer() CloudProviderServer {
 type CloudProviderServer struct {
 	protos.UnimplementedCloudProviderServer
 	proxmoxClient *proxmoxclient.ProxmoxClient
-	instances    []*protos.Instance
+	instances     []*protos.Instance
 }
 
 var nodeGroups = []*protos.NodeGroup{
@@ -53,34 +55,53 @@ var nodeGroupTargetSizes = map[string]int32{
 }
 
 func (CloudProviderServer) NodeGroups(context.Context, *protos.NodeGroupsRequest) (*protos.NodeGroupsResponse, error) {
+	log.Printf("NodeGroups was called")
 	response := &protos.NodeGroupsResponse{
 		NodeGroups: nodeGroups,
 	}
 	return response, nil
 }
 func (CloudProviderServer) NodeGroupForNode(c context.Context, r *protos.NodeGroupForNodeRequest) (*protos.NodeGroupForNodeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupForNode not implemented")
+	log.Printf("NodeGroupForNode was called with node name: '%s'", r.Node.Name)
+	return &protos.NodeGroupForNodeResponse{
+		NodeGroup: nodeGroups[0],
+	}, nil
 }
 func (CloudProviderServer) PricingNodePrice(context.Context, *protos.PricingNodePriceRequest) (*protos.PricingNodePriceResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PricingNodePrice not implemented")
+	log.Printf("PricingNodePrice was called")
+	return &protos.PricingNodePriceResponse{
+		Price: 0.0, // Since this is a custom implementation, we can return a dummy price or calculate based on some logic
+	}, nil
 }
 func (CloudProviderServer) PricingPodPrice(context.Context, *protos.PricingPodPriceRequest) (*protos.PricingPodPriceResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PricingPodPrice not implemented")
+	log.Printf("PricingPodPrice was called")
+	return &protos.PricingPodPriceResponse{
+		Price: 0.0, // Since this is a custom implementation, we can return a dummy price or calculate based on some logic
+	}, nil
 }
 func (CloudProviderServer) GPULabel(context.Context, *protos.GPULabelRequest) (*protos.GPULabelResponse, error) {
+	log.Printf("GPULabel was called")
+	return &protos.GPULabelResponse{}, nil
 	return nil, status.Errorf(codes.Unimplemented, "method GPULabel not implemented")
 }
 func (CloudProviderServer) GetAvailableGPUTypes(context.Context, *protos.GetAvailableGPUTypesRequest) (*protos.GetAvailableGPUTypesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetAvailableGPUTypes not implemented")
+	log.Printf("GetAvailableGPUTypes was called")
+	log.Printf("GetAvailableGPUTypes was called")
+	return &protos.GetAvailableGPUTypesResponse{
+		GpuTypes: map[string]*anypb.Any{},
+	}, nil
 }
 func (CloudProviderServer) Cleanup(context.Context, *protos.CleanupRequest) (*protos.CleanupResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Cleanup not implemented")
+	log.Printf("Cleanup was called")
+	return &protos.CleanupResponse{}, nil
 }
 func (CloudProviderServer) Refresh(context.Context, *protos.RefreshRequest) (*protos.RefreshResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Refresh not implemented")
+	log.Printf("Refresh was called")
+	return &protos.RefreshResponse{}, nil
 }
 
 func (CloudProviderServer) NodeGroupTargetSize(c context.Context, r *protos.NodeGroupTargetSizeRequest) (*protos.NodeGroupTargetSizeResponse, error) {
+	log.Printf("NodeGroupTargetSize was called with node group ID: '%s'", r.Id)
 	nodeGroup := findNodeGroupByID(r.Id)
 	if nodeGroup == nil {
 		return nil, status.Errorf(codes.NotFound, "node group not found")
@@ -132,15 +153,17 @@ func (c *CloudProviderServer) NodeGroupDeleteNodes(context context.Context, r *p
 }
 
 func (CloudProviderServer) NodeGroupDecreaseTargetSize(context.Context, *protos.NodeGroupDecreaseTargetSizeRequest) (*protos.NodeGroupDecreaseTargetSizeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupDecreaseTargetSize not implemented")
+	log.Printf("NodeGroupDecreaseTargetSize was called")
+	return &protos.NodeGroupDecreaseTargetSizeResponse{}, nil
 }
 
 func (c CloudProviderServer) NodeGroupNodes(context context.Context, r *protos.NodeGroupNodesRequest) (*protos.NodeGroupNodesResponse, error) {
+	log.Printf("NodeGroupNodes was called with node group ID: '%s'", r.Id)
 	// ## Testing ##
 	// if r.Id != nodeGroups[0].Id {
 	// 	return nil, status.Errorf(codes.NotFound, "node group not found")
 	// }
-	localContainerIDs := c.proxmoxClient.ListContainers()
+	localContainerIDs := c.proxmoxClient.ListVMIDs()
 	nodesInNodeGroup := []*protos.Instance{}
 	for _, containerID := range localContainerIDs {
 		instance := findNodeByContainerID(c, containerID)
@@ -158,10 +181,25 @@ func (c CloudProviderServer) NodeGroupNodes(context context.Context, r *protos.N
 	}, nil
 }
 func (CloudProviderServer) NodeGroupTemplateNodeInfo(context.Context, *protos.NodeGroupTemplateNodeInfoRequest) (*protos.NodeGroupTemplateNodeInfoResponse, error) {
+	log.Printf("NodeGroupTemplateNodeInfo was called")
+
 	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupTemplateNodeInfo not implemented")
 }
 func (CloudProviderServer) NodeGroupGetOptions(context.Context, *protos.NodeGroupAutoscalingOptionsRequest) (*protos.NodeGroupAutoscalingOptionsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeGroupGetOptions not implemented")
+	log.Printf("NodeGroupGetOptions was called")
+
+	oneSecondInNanoseconds := 1000000000
+	oneMinute := 60 * oneSecondInNanoseconds
+	fiveMinutes := 5 * oneMinute
+
+	return &protos.NodeGroupAutoscalingOptionsResponse{
+		NodeGroupAutoscalingOptions: &protos.NodeGroupAutoscalingOptions{
+			ScaleDownUtilizationThreshold:    0.5,                                                // Example threshold for scaling down
+			ScaleDownUnneededTime:            &v1.Duration{Duration: time.Duration(fiveMinutes)}, // Time in seconds before considering a node unneeded
+			ScaleDownUnreadyTime:             &v1.Duration{Duration: time.Duration(fiveMinutes)}, // Time in seconds before considering a node unready
+			ScaleDownGpuUtilizationThreshold: 0.5,                                                // Example GPU utilization threshold for scaling down
+		},
+	}, nil
 }
 
 func addProxmoxContainerAsNode(c *CloudProviderServer, containerProxmoxID string, nodeGroupID string) {
