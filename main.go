@@ -22,7 +22,7 @@ func main() {
 	// dockerCloudProviderServer := dockerCloudProviderServer.NewServer()
 	proxmoxProviderServer := proxmoxCloudProviderServer.NewServer()
 	// protos.RegisterCloudProviderServer(grpcServer, &dockerCloudProviderServer)
-	protos.RegisterCloudProviderServer(grpcServer, &proxmoxProviderServer)
+	protos.RegisterCloudProviderServer(grpcServer, proxmoxProviderServer)
 
 	// Step 3: Start listening
 	lis, err := net.Listen("tcp", "0.0.0.0:50051")
